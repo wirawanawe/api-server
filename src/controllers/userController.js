@@ -16,7 +16,7 @@ exports.listUsers = async (req, res) => {
         if (!ensureSuperadmin(req, res)) return;
 
         const [rows] = await mysqlPool.query(
-            'SELECT id, username, role, created_at FROM dashboard_users ORDER BY created_at DESC'
+            'SELECT id, username, role, sql_server, sql_database, sql_user, created_at FROM dashboard_users ORDER BY created_at DESC'
         );
         res.json({ data: rows });
     } catch (err) {
@@ -31,7 +31,7 @@ exports.getUser = async (req, res) => {
 
         const { id } = req.params;
         const [rows] = await mysqlPool.query(
-            'SELECT id, username, role, created_at FROM dashboard_users WHERE id = ?',
+            'SELECT id, username, role, sql_server, sql_database, sql_user, created_at FROM dashboard_users WHERE id = ?',
             [id]
         );
         if (rows.length === 0) {

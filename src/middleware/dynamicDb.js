@@ -96,7 +96,7 @@ const dynamicDb = async (req, res, next) => {
         }
 
         // 5. Get/Create Pool and Attach to Request
-        const poolName = `${sqlUserConfig.username}_${sqlUserConfig.sql_database}`;
+        const poolName = `${sqlUserConfig.sql_server}_${sqlUserConfig.sql_database}_${sqlUserConfig.sql_user}`;
         const pool = await getPool(poolName, sqlConfig);
         req.db = pool;
 
