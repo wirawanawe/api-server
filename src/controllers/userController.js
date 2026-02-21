@@ -13,10 +13,13 @@ function ensureSuperadmin(req, res) {
 
 exports.listUsers = async (req, res) => {
     try {
-        if (!ensureSuperadmin(req, res)) return;
+        const { sortBy, sortOrder } = req.query;
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'created_at DESC';
 
         const [rows] = await mysqlPool.query(
-            'SELECT id, username, role, sql_server, sql_database, sql_user, created_at FROM dashboard_users ORDER BY created_at DESC'
+            `SELECT id, username, role, sql_server, sql_database, sql_user, created_at FROM dashboard_users ORDER BY ${finalOrder}`
         );
         res.json({ data: rows });
     } catch (err) {

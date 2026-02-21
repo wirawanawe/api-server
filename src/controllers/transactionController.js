@@ -2,7 +2,7 @@ const { sql } = require('../config/db');
 
 exports.getTransactions = async (req, res) => {
     try {
-        const { startDate, endDate, noMR, kunjunganID, noTransaksi } = req.query;
+        const { startDate, endDate, noMR, kunjunganID, noTransaksi, sortBy, sortOrder } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
@@ -49,6 +49,10 @@ exports.getTransactions = async (req, res) => {
         const totalRows = countResult.recordset[0].total;
         const totalPages = Math.ceil(totalRows / limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'Tgl_Transaksi DESC';
+
         // 2. Get Data with Pagination
         let query = `
             SELECT 
@@ -59,7 +63,7 @@ exports.getTransactions = async (req, res) => {
                 Total
             FROM TRANSAKSI
             ${filterClause}
-            ORDER BY Tgl_Transaksi DESC
+            ORDER BY ${finalOrder}
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `;
 

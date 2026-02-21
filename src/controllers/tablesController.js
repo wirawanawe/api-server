@@ -40,6 +40,7 @@ exports.getTableData = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
+        const { sortBy, sortOrder } = req.query;
 
         const pool = req.db;
         if (!pool) {
@@ -59,11 +60,15 @@ exports.getTableData = async (req, res) => {
         const totalRows = countResult.recordset[0].total;
         const totalPages = Math.ceil(totalRows / limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        const finalOrder = validSortBy ? `[${validSortBy}] ${validSortOrder}` : '1';
+
         // 2. Get Data with Pagination (hanya gcrecord = 0)
         const result = await pool.request()
             .input('offset', sql.Int, offset)
             .input('limit', sql.Int, limit)
-            .query(`SELECT * FROM [${tableName}]${whereClause} ORDER BY 1 OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`);
+            .query(`SELECT * FROM [${tableName}]${whereClause} ORDER BY ${finalOrder} OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`);
 
         res.json({
             message: 'Data fetched successfully',

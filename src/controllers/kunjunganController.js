@@ -2,7 +2,7 @@ const { sql } = require('../config/db');
 
 exports.getKunjungan = async (req, res) => {
     try {
-        const { startDate, endDate, noMR, namaPeserta, noKPK, dokterID } = req.query;
+        const { startDate, endDate, noMR, namaPeserta, noKPK, dokterID, sortBy, sortOrder } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
@@ -60,13 +60,17 @@ exports.getKunjungan = async (req, res) => {
         request.input('offset', sql.Int, offset);
         request.input('limit', sql.Int, limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'K.Tgl_Kunjungan DESC';
+
         const result = await request.query(`
             SELECT K.*, D.Dokter_Name, U.Unit_Name
             FROM Kunjungan K
             LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
             LEFT JOIN Unit U ON K.Unit_ID = U.Unit_ID
             ${filterClause.replace(/Kunjungan\.GCRecord/g, 'K.GCRecord')}
-            ORDER BY K.Tgl_Kunjungan DESC 
+            ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `);
 

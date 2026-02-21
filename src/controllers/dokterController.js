@@ -2,7 +2,7 @@ const { sql } = require('../config/db');
 
 exports.getDokter = async (req, res) => {
     try {
-        const { nama } = req.query;
+        const { nama, sortBy, sortOrder } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
@@ -36,11 +36,15 @@ exports.getDokter = async (req, res) => {
         request.input('offset', sql.Int, offset);
         request.input('limit', sql.Int, limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'Dokter_Name ASC';
+
         const result = await request.query(`
             SELECT * 
             FROM Dokter 
             ${filterClause}
-            ORDER BY Dokter_Name ASC 
+            ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `);
 

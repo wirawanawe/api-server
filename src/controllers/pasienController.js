@@ -2,7 +2,7 @@ const { sql } = require('../config/db');
 
 exports.getPasien = async (req, res) => {
     try {
-        const { namaPasien, noMR, jenisKelamin } = req.query;
+        const { namaPasien, noMR, jenisKelamin, sortBy, sortOrder } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
@@ -53,6 +53,10 @@ exports.getPasien = async (req, res) => {
         request.input('offset', sql.Int, offset);
         request.input('limit', sql.Int, limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'P.No_MR DESC';
+
         const result = await request.query(`
             SELECT 
                 P.No_MR,
@@ -75,7 +79,7 @@ exports.getPasien = async (req, res) => {
             LEFT JOIN Wilayah_Kota WKota ON P.Kota_ID = WKota.Kota_ID
             LEFT JOIN Wilayah_Propinsi WProp ON P.Propinsi_ID = WProp.Propinsi_ID
             ${filterClause}
-            ORDER BY P.No_MR DESC 
+            ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `);
 

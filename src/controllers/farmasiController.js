@@ -15,13 +15,17 @@ const getPaginatedData = async (req, res, tableName, orderColumn) => {
         const totalRows = countResult.recordset[0].total;
         const totalPages = Math.ceil(totalRows / limit);
 
+        const sortBy = req.query.sortBy ? req.query.sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const sortOrder = req.query.sortOrder && req.query.sortOrder.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        const finalOrder = sortBy ? `${sortBy} ${sortOrder}` : orderColumn;
+
         const result = await pool.request()
             .input('offset', sql.Int, offset)
             .input('limit', sql.Int, limit)
             .query(`
                 SELECT * 
                 FROM [${tableName}] 
-                ORDER BY ${orderColumn} 
+                ORDER BY ${finalOrder} 
                 OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
             `);
 
@@ -40,11 +44,12 @@ const obatJoinClause = `
             FROM FAR_PRODUK P
             LEFT JOIN Far_Obat O ON P.ElementDetailKey = O.ElementDetailKey
             LEFT JOIN Far_Pabrik PB ON O.KDPAB = PB.KDPAB
-            LEFT JOIN Far_TYPECRITERIA G ON O.GOLOBAT_ID = G.TYPE_OBAT_ID`;
+            LEFT JOIN Far_TYPECRITERIA G ON O.GOLOBAT_ID = G.TYPE_OBAT_ID
+            LEFT JOIN Far_Stok_Current S ON P.ElementDetailKey = S.itemID`;
 
 exports.getObat = async (req, res) => {
     try {
-        const { namaObat, aktif, pabrik, golongan } = req.query;
+        const { namaObat, aktif, pabrik, golongan, sortBy, sortOrder } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
@@ -98,13 +103,18 @@ exports.getObat = async (req, res) => {
         request.input('offset', sql.Int, offset);
         request.input('limit', sql.Int, limit);
 
+        const validSortBy = sortBy ? sortBy.replace(/[^a-zA-Z0-9_]/g, '') : null;
+        const validSortOrder = sortOrder && sortOrder.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'P.Detail ASC, P.KFA_Code ASC';
+
         const result = await request.query(`
             SELECT P.*,
                 PB.NMPAB AS Pabrik,
-                G.TYPE_OBAT_NAME AS Golongan
+                G.TYPE_OBAT_NAME AS Golongan,
+                S.stock AS Stok
             ${obatJoinClause}
             ${filterClause}
-            ORDER BY P.Detail ASC, P.KFA_Code ASC
+            ORDER BY ${finalOrder}
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `);
 
