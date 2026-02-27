@@ -6,6 +6,11 @@ const dashboardController = require('../controllers/dashboardController');
 // GET /api/dashboard/graph?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 router.get('/graph', dashboardController.getGraphData);
 
+// Graph dengan breakdown pegawai/pensiunan
+router.get('/graph-status', dashboardController.getGraphDataByStatus);
+router.get('/graph-status-month', dashboardController.getGraphDataByStatusMonth);
+router.get('/graph-status-year', dashboardController.getGraphDataByStatusYear);
+
 // Route to get dashboard stats (kunjungan, obat, diagnosa)
 // GET /api/dashboard/stats
 router.get('/stats', dashboardController.getStats);

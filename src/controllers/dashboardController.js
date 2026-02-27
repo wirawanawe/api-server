@@ -33,13 +33,51 @@ exports.getStats = async (req, res) => {
         // 1. Total Kunjungan: hari ini, bulan terpilih, tahun terpilih (hanya GCRecord = false)
         const kunjunganResult = await reqPool.query(`
             SELECT 
-                SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) = @today THEN 1 ELSE 0 END) AS totalHariIni,
-                SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @monthStart AND @monthEnd THEN 1 ELSE 0 END) AS totalBulanIni,
-                SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd THEN 1 ELSE 0 END) AS totalTahunIni
-            FROM Kunjungan
-            WHERE (GCRecord = 0 OR GCRecord = 'False' OR GCRecord IS NULL)
+                SUM(CASE WHEN CAST(K.Tgl_Kunjungan AS DATE) = @today THEN 1 ELSE 0 END) AS totalHariIni,
+                SUM(CASE WHEN CAST(K.Tgl_Kunjungan AS DATE) BETWEEN @monthStart AND @monthEnd THEN 1 ELSE 0 END) AS totalBulanIni,
+                SUM(CASE WHEN CAST(K.Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd THEN 1 ELSE 0 END) AS totalTahunIni
+            FROM Kunjungan K
+            WHERE (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
         `);
         const kunjungan = kunjunganResult.recordset[0] || { totalHariIni: 0, totalBulanIni: 0, totalTahunIni: 0 };
+
+        // 1b. Kunjungan Pegawai vs Pensiunan (status dari 2 digit pertama Nama_Panggilan = tahun lahir, usia>56 = pensiunan)
+        let statusStats = { hariIni: { pegawai: 0, pensiunan: 0, lainnya: 0 }, bulanIni: { pegawai: 0, pensiunan: 0, lainnya: 0 }, tahunIni: { pegawai: 0, pensiunan: 0, lainnya: 0 } };
+        try {
+            const statusResult = await pool.request()
+                .input('today', sql.Date, today)
+                .input('monthStart', sql.Date, monthStart)
+                .input('monthEnd', sql.Date, monthEnd)
+                .input('yearStart', sql.Date, yearStart)
+                .input('yearEnd', sql.Date, yearEnd)
+                .query(`
+                    WITH KWithStatus AS (
+                        SELECT K.Tgl_Kunjungan, ${statusExpr} AS status
+                        FROM Kunjungan K
+                        LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
+                        WHERE (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+                    )
+                    SELECT 
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) = @today AND status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawaiHariIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) = @today AND status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunanHariIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) = @today AND status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnyaHariIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @monthStart AND @monthEnd AND status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawaiBulanIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @monthStart AND @monthEnd AND status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunanBulanIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @monthStart AND @monthEnd AND status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnyaBulanIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd AND status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawaiTahunIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd AND status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunanTahunIni,
+                        SUM(CASE WHEN CAST(Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd AND status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnyaTahunIni
+                    FROM KWithStatus
+                `);
+            const r = statusResult.recordset[0] || {};
+            statusStats = {
+                hariIni: { pegawai: r.pegawaiHariIni ?? 0, pensiunan: r.pensiunanHariIni ?? 0, lainnya: r.lainnyaHariIni ?? 0 },
+                bulanIni: { pegawai: r.pegawaiBulanIni ?? 0, pensiunan: r.pensiunanBulanIni ?? 0, lainnya: r.lainnyaBulanIni ?? 0 },
+                tahunIni: { pegawai: r.pegawaiTahunIni ?? 0, pensiunan: r.pensiunanTahunIni ?? 0, lainnya: r.lainnyaTahunIni ?? 0 },
+            };
+        } catch (statusErr) {
+            console.warn('Status stats query error:', statusErr.message);
+        }
 
         // 2. Obat yang sering diresepkan (per tahun dan per bulan) - dari Resep dan Resep_Detail
         let topObatTahun = [];
@@ -158,6 +196,7 @@ exports.getStats = async (req, res) => {
                 bulanIni: kunjungan.totalBulanIni ?? 0,
                 tahunIni: kunjungan.totalTahunIni ?? 0,
             },
+            kunjunganByStatus: statusStats,
             obatTahunIni: topObatTahun,
             obatBulanIni: topObatBulan,
             diagnosaTahunIni: topDiagnosaTahun,
@@ -205,6 +244,161 @@ exports.getGraphData = async (req, res) => {
             jumlah: r.jumlah ?? 0
         }));
 
+        res.json({ message: 'Data fetched successfully', data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
+
+const statusExpr = `CASE 
+    WHEN P.Nama_Panggilan IS NULL OR LEN(LTRIM(RTRIM(ISNULL(P.Nama_Panggilan,'')))) < 2 THEN 'Lainnya'
+    WHEN (YEAR(GETDATE()) - (CASE WHEN TRY_CAST(SUBSTRING(LTRIM(RTRIM(P.Nama_Panggilan)), 1, 2) AS INT) <= 25 
+        THEN 2000 + TRY_CAST(SUBSTRING(LTRIM(RTRIM(P.Nama_Panggilan)), 1, 2) AS INT) 
+        ELSE 1900 + TRY_CAST(SUBSTRING(LTRIM(RTRIM(P.Nama_Panggilan)), 1, 2) AS INT) END)) > 56 
+    THEN 'Pensiunan' ELSE 'Pegawai' END`;
+
+/**
+ * GET /api/dashboard/graph-status?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+ * Returns: kunjungan per hari dengan breakdown pegawai/pensiunan
+ */
+exports.getGraphDataByStatus = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Start date and end date are required' });
+        }
+        const pool = req.db;
+        if (!pool) return res.status(500).json({ message: 'Database connection failed' });
+
+        const result = await pool.request()
+            .input('startDate', sql.Date, startDate)
+            .input('endDate', sql.Date, endDate)
+            .query(`
+                WITH KWithStatus AS (
+                    SELECT K.Tgl_Kunjungan, ${statusExpr} AS status
+                    FROM Kunjungan K
+                    LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
+                    WHERE CAST(K.Tgl_Kunjungan AS DATE) BETWEEN @startDate AND @endDate
+                    AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+                )
+                SELECT 
+                    CAST(Tgl_Kunjungan AS DATE) AS tanggal,
+                    SUM(CASE WHEN status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawai,
+                    SUM(CASE WHEN status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunan,
+                    SUM(CASE WHEN status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnya
+                FROM KWithStatus
+                GROUP BY CAST(Tgl_Kunjungan AS DATE)
+                ORDER BY CAST(Tgl_Kunjungan AS DATE) ASC
+            `);
+
+        const data = (result.recordset || []).map(r => ({
+            tanggal: r.tanggal ? new Date(r.tanggal).toISOString().slice(0, 10) : null,
+            pegawai: r.pegawai ?? 0,
+            pensiunan: r.pensiunan ?? 0,
+            lainnya: r.lainnya ?? 0,
+        }));
+        res.json({ message: 'Data fetched successfully', data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
+
+/**
+ * GET /api/dashboard/graph-status-month?year=YYYY
+ * Returns: kunjungan per bulan dengan breakdown pegawai/pensiunan
+ */
+exports.getGraphDataByStatusMonth = async (req, res) => {
+    try {
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const pool = req.db;
+        if (!pool) return res.status(500).json({ message: 'Database connection failed' });
+
+        const result = await pool.request()
+            .input('yearStart', sql.Date, `${year}-01-01`)
+            .input('yearEnd', sql.Date, `${year}-12-31`)
+            .query(`
+                WITH KWithStatus AS (
+                    SELECT K.Tgl_Kunjungan, ${statusExpr} AS status
+                    FROM Kunjungan K
+                    LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
+                    WHERE CAST(K.Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd
+                    AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+                )
+                SELECT 
+                    MONTH(Tgl_Kunjungan) AS bulan,
+                    SUM(CASE WHEN status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawai,
+                    SUM(CASE WHEN status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunan,
+                    SUM(CASE WHEN status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnya
+                FROM KWithStatus
+                GROUP BY MONTH(Tgl_Kunjungan)
+                ORDER BY MONTH(Tgl_Kunjungan) ASC
+            `);
+
+        const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        const byMonth = Object.fromEntries([1,2,3,4,5,6,7,8,9,10,11,12].map(m => [m, { bulan: m, label: MONTHS[m-1], pegawai: 0, pensiunan: 0, lainnya: 0 }]));
+        (result.recordset || []).forEach(r => {
+            const m = r.bulan ?? 1;
+            if (byMonth[m]) {
+                byMonth[m].pegawai = r.pegawai ?? 0;
+                byMonth[m].pensiunan = r.pensiunan ?? 0;
+                byMonth[m].lainnya = r.lainnya ?? 0;
+            }
+        });
+        const data = Object.values(byMonth);
+        res.json({ message: 'Data fetched successfully', data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
+
+/**
+ * GET /api/dashboard/graph-status-year?yearFrom=YYYY&yearTo=YYYY
+ * Returns: kunjungan per tahun dengan breakdown pegawai/pensiunan
+ */
+exports.getGraphDataByStatusYear = async (req, res) => {
+    try {
+        const now = new Date().getFullYear();
+        const yearFrom = parseInt(req.query.yearFrom) || now - 4;
+        const yearTo = parseInt(req.query.yearTo) || now;
+        const pool = req.db;
+        if (!pool) return res.status(500).json({ message: 'Database connection failed' });
+
+        const result = await pool.request()
+            .input('yearStart', sql.Date, `${yearFrom}-01-01`)
+            .input('yearEnd', sql.Date, `${yearTo}-12-31`)
+            .query(`
+                WITH KWithStatus AS (
+                    SELECT K.Tgl_Kunjungan, ${statusExpr} AS status
+                    FROM Kunjungan K
+                    LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
+                    WHERE CAST(K.Tgl_Kunjungan AS DATE) BETWEEN @yearStart AND @yearEnd
+                    AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+                )
+                SELECT 
+                    YEAR(Tgl_Kunjungan) AS tahun,
+                    SUM(CASE WHEN status = 'Pegawai' THEN 1 ELSE 0 END) AS pegawai,
+                    SUM(CASE WHEN status = 'Pensiunan' THEN 1 ELSE 0 END) AS pensiunan,
+                    SUM(CASE WHEN status = 'Lainnya' THEN 1 ELSE 0 END) AS lainnya
+                FROM KWithStatus
+                GROUP BY YEAR(Tgl_Kunjungan)
+                ORDER BY YEAR(Tgl_Kunjungan) ASC
+            `);
+
+        const byYear = Object.fromEntries(
+            Array.from({ length: yearTo - yearFrom + 1 }, (_, i) => yearFrom + i).map(y => [y, { tahun: y, pegawai: 0, pensiunan: 0, lainnya: 0 }])
+        );
+        (result.recordset || []).forEach(r => {
+            const y = r.tahun ?? yearFrom;
+            if (byYear[y]) {
+                byYear[y].pegawai = r.pegawai ?? 0;
+                byYear[y].pensiunan = r.pensiunan ?? 0;
+                byYear[y].lainnya = r.lainnya ?? 0;
+            }
+        });
+        const data = Object.values(byYear);
         res.json({ message: 'Data fetched successfully', data });
     } catch (err) {
         console.error(err);

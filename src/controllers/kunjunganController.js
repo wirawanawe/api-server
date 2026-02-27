@@ -65,10 +65,11 @@ exports.getKunjungan = async (req, res) => {
         const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'K.Tgl_Kunjungan DESC';
 
         const result = await request.query(`
-            SELECT K.*, D.Dokter_Name, U.Unit_Name
+            SELECT K.*, D.Dokter_Name, U.Unit_Name, P.Nama_Panggilan
             FROM Kunjungan K
             LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
             LEFT JOIN Unit U ON K.Unit_ID = U.Unit_ID
+            LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
             ${filterClause.replace(/Kunjungan\.GCRecord/g, 'K.GCRecord')}
             ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
@@ -124,10 +125,11 @@ exports.getKunjunganDetail = async (req, res) => {
         }
 
         const kunjunganResult = await kReq.query(`
-                SELECT K.*, D.Dokter_Name, U.Unit_Name
+                SELECT K.*, D.Dokter_Name, U.Unit_Name, P.Nama_Panggilan
                 FROM Kunjungan K
                 LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
                 LEFT JOIN Unit U ON K.Unit_ID = U.Unit_ID
+                LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
                 WHERE K.Kunjungan_ID = @id AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
             `);
 
