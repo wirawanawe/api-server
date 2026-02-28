@@ -15,4 +15,12 @@ router.get('/graph-status-year', dashboardController.getGraphDataByStatusYear);
 // GET /api/dashboard/stats
 router.get('/stats', dashboardController.getStats);
 
+// Pembelian Obat (PO/RO)
+// GET /api/dashboard/pembelian-obat/stats?month=1&year=2025
+router.get('/pembelian-obat/stats', dashboardController.getPembelianObatStats);
+// GET /api/dashboard/pembelian-obat/graph?year=2025
+router.get('/pembelian-obat/graph', dashboardController.getPembelianObatGraph);
+// GET /api/dashboard/pembelian-obat/schema (debug: cek tabel/kolom terdeteksi)
+router.get('/pembelian-obat/schema', dashboardController.getPembelianObatSchema);
+
 module.exports = router;
