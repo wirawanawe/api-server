@@ -544,6 +544,67 @@ exports.getPembelianObatSchema = async (req, res) => {
     }
 };
 
+/**
+ * GET /api/dashboard/laporan/pembelian-obat?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+ * JOIN POHeader + RODetail: Tanggal dari PODate, Vendor dari POHeader, join via PONumber = FromPO
+ */
+exports.getLaporanPembelianObat = async (req, res) => {
+    try {
+        const pool = req.db;
+        if (!pool) return res.status(500).json({ message: 'Database connection failed' });
+
+        const { startDate, endDate } = req.query;
+
+        const rdGc = await hasColumn(pool, 'RODetail', 'GCRecord');
+        const phGc = await hasColumn(pool, 'POHeader', 'GCRecord');
+        const gcFilter = (rdGc ? ' AND (RD.GCRecord = 0 OR RD.GCRecord = \'False\' OR RD.GCRecord IS NULL)' : '') +
+            (phGc ? ' AND (PH.GCRecord = 0 OR PH.GCRecord = \'False\' OR PH.GCRecord IS NULL)' : '');
+
+        const reqPool = pool.request();
+        let dateFilter = '';
+        if (startDate) {
+            reqPool.input('startDate', sql.Date, startDate);
+            dateFilter += ' AND CAST(PH.PODate AS DATE) >= @startDate';
+        }
+        if (endDate) {
+            reqPool.input('endDate', sql.Date, endDate);
+            dateFilter += ' AND CAST(PH.PODate AS DATE) <= @endDate';
+        }
+
+        const result = await reqPool.query(`
+            SELECT
+                PH.PODate AS tglPembelian,
+                RD.ItemName AS namaObat,
+                PH.Vendor AS namaVendor,
+                RD.BatchNumber AS noBatch,
+                ISNULL(RD.Quantity, 0) AS qty,
+                ISNULL(RD.HNA, 0) AS harga,
+                (ISNULL(RD.Quantity, 0) * ISNULL(RD.HNA, 0)) AS jumlah
+            FROM RODetail RD
+            INNER JOIN POHeader PH ON PH.PONumber = RD.FromPO
+            WHERE 1=1
+            ${gcFilter}
+            ${dateFilter}
+            ORDER BY PH.PODate DESC, RD.ItemName
+        `);
+
+        const data = (result.recordset || []).map((r) => ({
+            tglPembelian: r.tglPembelian ? new Date(r.tglPembelian).toISOString().slice(0, 10) : null,
+            namaObat: r.namaObat ?? '-',
+            namaVendor: r.namaVendor ?? '-',
+            noBatch: r.noBatch ?? '',
+            qty: r.qty ?? 0,
+            harga: r.harga ?? 0,
+            jumlah: r.jumlah ?? 0,
+        }));
+
+        res.json({ message: 'Data fetched successfully', data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
+
 /** Cek apakah tabel ada (nama case-insensitive via COLLATE atau LOWER) */
 async function tableExists(pool, tableName) {
     try {

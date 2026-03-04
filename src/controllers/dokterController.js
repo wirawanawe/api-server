@@ -12,7 +12,8 @@ exports.getDokter = async (req, res) => {
             return res.status(500).json({ message: 'Database connection failed' });
         }
 
-        let filterClause = " WHERE 1=1 AND (GCRecord = 0 OR GCRecord = 'False' OR GCRecord IS NULL)";
+        // Selalu gunakan alias D untuk tabel Dokter
+        let filterClause = " WHERE 1=1 AND (D.GCRecord = 0 OR D.GCRecord = 'False' OR D.GCRecord IS NULL)";
         const inputs = {};
 
         if (nama) {
@@ -25,7 +26,7 @@ exports.getDokter = async (req, res) => {
             countRequest.input(key, inputs[key].type, inputs[key].value);
         });
 
-        const countResult = await countRequest.query(`SELECT COUNT(*) as total FROM Dokter ${filterClause}`);
+        const countResult = await countRequest.query(`SELECT COUNT(*) as total FROM Dokter D ${filterClause}`);
         const totalRows = countResult.recordset[0].total;
         const totalPages = Math.ceil(totalRows / limit);
 
@@ -41,8 +42,24 @@ exports.getDokter = async (req, res) => {
         const finalOrder = validSortBy ? `${validSortBy} ${validSortOrder}` : 'Dokter_Name ASC';
 
         const result = await request.query(`
-            SELECT * 
-            FROM Dokter 
+            SELECT 
+                D.*,
+                ISNULL(S.PasienHariIni, 0) AS PasienHariIni,
+                ISNULL(S.PasienBulanIni, 0) AS PasienBulanIni,
+                ISNULL(S.PasienTahunIni, 0) AS PasienTahunIni
+            FROM Dokter D
+            OUTER APPLY (
+                SELECT
+                    SUM(CASE WHEN CAST(K.Tgl_Kunjungan AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS PasienHariIni,
+                    SUM(CASE 
+                            WHEN YEAR(K.Tgl_Kunjungan) = YEAR(GETDATE()) 
+                             AND MONTH(K.Tgl_Kunjungan) = MONTH(GETDATE()) 
+                        THEN 1 ELSE 0 END) AS PasienBulanIni,
+                    SUM(CASE WHEN YEAR(K.Tgl_Kunjungan) = YEAR(GETDATE()) THEN 1 ELSE 0 END) AS PasienTahunIni
+                FROM Kunjungan K
+                WHERE K.Dokter_ID = D.Dokter_ID
+                  AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+            ) AS S
             ${filterClause}
             ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY

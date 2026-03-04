@@ -3,6 +3,7 @@ const router = express.Router();
 const kunjunganController = require('../controllers/kunjunganController');
 
 router.get('/', kunjunganController.getKunjungan);
+router.get('/by-pasien', kunjunganController.getKunjunganByPasien);
 router.get('/:id/detail', kunjunganController.getKunjunganDetail);
 
 module.exports = router;

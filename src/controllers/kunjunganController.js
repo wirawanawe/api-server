@@ -12,33 +12,34 @@ exports.getKunjungan = async (req, res) => {
             return res.status(500).json({ message: 'Database connection failed' });
         }
 
-        // Build Filter Clause
-        let filterClause = " WHERE 1=1 AND (Kunjungan.GCRecord = 0 OR Kunjungan.GCRecord = 'False' OR Kunjungan.GCRecord IS NULL)";
+        // Build Filter Clause (selalu filter berdasarkan tabel Kunjungan / alias K)
+        let filterClause = " WHERE 1=1 AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)";
         const inputs = {};
 
         if (startDate && endDate) {
-            filterClause += ` AND Tgl_Kunjungan BETWEEN @startDate AND @endDate`;
+            filterClause += ` AND K.Tgl_Kunjungan BETWEEN @startDate AND @endDate`;
             inputs.startDate = { type: sql.Date, value: startDate };
             inputs.endDate = { type: sql.Date, value: endDate };
         }
 
         if (noMR) {
-            filterClause += ` AND No_MR = @noMR`;
+            // filter riwayat kunjungan berdasarkan No_MR (NomR) pasien pada tabel Kunjungan
+            filterClause += ` AND K.No_MR = @noMR`;
             inputs.noMR = { type: sql.VarChar, value: noMR };
         }
 
         if (namaPeserta) {
-            filterClause += ` AND Nama_Peserta LIKE @namaPeserta`;
+            filterClause += ` AND K.Nama_Peserta LIKE @namaPeserta`;
             inputs.namaPeserta = { type: sql.VarChar, value: `%${namaPeserta}%` };
         }
 
         if (noKPK) {
-            filterClause += ` AND No_KPK = @noKPK`;
+            filterClause += ` AND K.No_KPK = @noKPK`;
             inputs.noKPK = { type: sql.VarChar, value: noKPK };
         }
 
         if (dokterID) {
-            filterClause += ` AND Dokter_ID = @dokterID`;
+            filterClause += ` AND K.Dokter_ID = @dokterID`;
             inputs.dokterID = { type: sql.Int, value: dokterID };
         }
 
@@ -48,7 +49,7 @@ exports.getKunjungan = async (req, res) => {
             countRequest.input(key, inputs[key].type, inputs[key].value);
         });
 
-        const countResult = await countRequest.query(`SELECT COUNT(*) as total FROM Kunjungan ${filterClause.replace(/Kunjungan\.GCRecord/g, 'GCRecord')}`);
+        const countResult = await countRequest.query(`SELECT COUNT(*) as total FROM Kunjungan K ${filterClause}`);
         const totalRows = countResult.recordset[0].total;
         const totalPages = Math.ceil(totalRows / limit);
 
@@ -70,7 +71,7 @@ exports.getKunjungan = async (req, res) => {
             LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
             LEFT JOIN Unit U ON K.Unit_ID = U.Unit_ID
             LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
-            ${filterClause.replace(/Kunjungan\.GCRecord/g, 'K.GCRecord')}
+            ${filterClause}
             ORDER BY ${finalOrder} 
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
         `);
@@ -84,6 +85,69 @@ exports.getKunjungan = async (req, res) => {
                 totalPages
             },
             data: result.recordset
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
+
+// Kunjungan berdasarkan No_MR (NomR) pasien, khusus untuk detail pasien
+exports.getKunjunganByPasien = async (req, res) => {
+    try {
+        const { noMR } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+
+        if (!noMR) {
+            return res.status(400).json({ message: 'noMR is required' });
+        }
+
+        const pool = req.db;
+        if (!pool) {
+            return res.status(500).json({ message: 'Database connection failed' });
+        }
+
+        // Hitung total kunjungan untuk pasien ini
+        const countReq = pool.request();
+        countReq.input('noMR', sql.VarChar, noMR);
+        const countResult = await countReq.query(`
+            SELECT COUNT(*) as total
+            FROM Kunjungan K
+            WHERE K.No_MR = @noMR
+              AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+        `);
+        const totalRows = countResult.recordset[0]?.total ?? 0;
+        const totalPages = totalRows > 0 ? Math.ceil(totalRows / limit) : 0;
+
+        // Ambil data kunjungan dengan pagination
+        const listReq = pool.request();
+        listReq.input('noMR', sql.VarChar, noMR);
+        listReq.input('offset', sql.Int, offset);
+        listReq.input('limit', sql.Int, limit);
+
+        const listResult = await listReq.query(`
+            SELECT K.*, D.Dokter_Name, U.Unit_Name, P.Nama_Panggilan
+            FROM Kunjungan K
+            LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
+            LEFT JOIN Unit U ON K.Unit_ID = U.Unit_ID
+            LEFT JOIN PASIEN P ON K.No_MR = P.No_MR AND (P.GCRecord = 0 OR P.GCRecord = 'False' OR P.GCRecord IS NULL)
+            WHERE K.No_MR = @noMR
+              AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+            ORDER BY K.Tgl_Kunjungan DESC
+            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+        `);
+
+        return res.json({
+            message: 'Data fetched successfully',
+            pagination: {
+                page,
+                limit,
+                totalRows,
+                totalPages,
+            },
+            data: listResult.recordset || [],
         });
     } catch (err) {
         console.error(err);

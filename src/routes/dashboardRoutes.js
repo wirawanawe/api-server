@@ -23,4 +23,8 @@ router.get('/pembelian-obat/graph', dashboardController.getPembelianObatGraph);
 // GET /api/dashboard/pembelian-obat/schema (debug: cek tabel/kolom terdeteksi)
 router.get('/pembelian-obat/schema', dashboardController.getPembelianObatSchema);
 
+// Laporan Pembelian Obat (JOIN POHeader + RODetail)
+// GET /api/dashboard/laporan/pembelian-obat?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+router.get('/laporan/pembelian-obat', dashboardController.getLaporanPembelianObat);
+
 module.exports = router;
