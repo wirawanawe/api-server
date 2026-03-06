@@ -108,15 +108,15 @@ exports.getResepSummary = async (req, res) => {
             .input('monthEnd', sql.Date, monthEnd)
             .query(`
                 SELECT
-                    COUNT(DISTINCT CASE WHEN CAST(R.TgInvoice AS DATE) = @today THEN R.NoInvoice END) AS countHariIni,
-                    SUM(CASE WHEN CAST(R.TgInvoice AS DATE) = @today THEN ISNULL(RD.Jumlah, 0) ELSE 0 END) AS nominalHariIni,
-                    COUNT(DISTINCT CASE WHEN CAST(R.TgInvoice AS DATE) BETWEEN @monthStart AND @monthEnd THEN R.NoInvoice END) AS countBulanIni,
-                    SUM(CASE WHEN CAST(R.TgInvoice AS DATE) BETWEEN @monthStart AND @monthEnd THEN ISNULL(RD.Jumlah, 0) ELSE 0 END) AS nominalBulanIni,
-                    COUNT(DISTINCT CASE WHEN CAST(R.TgInvoice AS DATE) BETWEEN @yearStart AND @yearEnd THEN R.NoInvoice END) AS countTahunIni,
-                    SUM(CASE WHEN CAST(R.TgInvoice AS DATE) BETWEEN @yearStart AND @yearEnd THEN ISNULL(RD.Jumlah, 0) ELSE 0 END) AS nominalTahunIni
-                FROM Resep R
-                LEFT JOIN Resep_Detail RD ON R.NoInvoice = RD.NoInvoice AND (RD.GCRecord = 0 OR RD.GCRecord = 'False' OR RD.GCRecord IS NULL)
-                WHERE (R.GCRecord = 0 OR R.GCRecord = 'False' OR R.GCRecord IS NULL)
+                    COUNT(DISTINCT CASE WHEN CONVERT(date, R.TgInvoice) = @today THEN R.NoInvoice END) AS countHariIni,
+                    SUM(CASE WHEN CONVERT(date, R.TgInvoice) = @today THEN ISNULL(RD.RpNetto, 0) ELSE 0 END) AS nominalHariIni,
+                    COUNT(DISTINCT CASE WHEN CONVERT(date, R.TgInvoice) BETWEEN @monthStart AND @monthEnd THEN R.NoInvoice END) AS countBulanIni,
+                    SUM(CASE WHEN CONVERT(date, R.TgInvoice) BETWEEN @monthStart AND @monthEnd THEN ISNULL(RD.RpNetto, 0) ELSE 0 END) AS nominalBulanIni,
+                    COUNT(DISTINCT CASE WHEN CONVERT(date, R.TgInvoice) BETWEEN @yearStart AND @yearEnd THEN R.NoInvoice END) AS countTahunIni,
+                    SUM(CASE WHEN CONVERT(date, R.TgInvoice) BETWEEN @yearStart AND @yearEnd THEN ISNULL(RD.RpNetto, 0) ELSE 0 END) AS nominalTahunIni
+                FROM FAR_RESEP R
+                LEFT JOIN FAR_RESEP_DETAIL RD ON R.NoInvoice = RD.NoInvoice
+                WHERE 1=1
             `);
 
         const row = result.recordset[0] || {};
@@ -156,12 +156,10 @@ exports.getTopMedicines = async (req, res) => {
             SELECT TOP 10
                 RD.ItemDesc,
                 SUM(RD.Qty) as TotalQty,
-                SUM(RD.Jumlah) as TotalNominal
-            FROM Resep R
-            JOIN Resep_Detail RD ON R.NoInvoice = RD.NoInvoice
-            WHERE (R.GCRecord = 0 OR R.GCRecord = 'False' OR R.GCRecord IS NULL)
-              AND (RD.GCRecord = 0 OR RD.GCRecord = 'False' OR RD.GCRecord IS NULL)
-              AND RD.ItemDesc IS NOT NULL AND RD.ItemDesc != ''
+                SUM(RD.RpNetto) as TotalNominal
+            FROM FAR_RESEP R
+            JOIN FAR_RESEP_DETAIL RD ON R.NoInvoice = RD.NoInvoice
+            WHERE RD.ItemDesc IS NOT NULL AND RD.ItemDesc != ''
         `;
 
         const request = pool.request()
@@ -173,21 +171,21 @@ exports.getTopMedicines = async (req, res) => {
 
         const todayResult = await request.query(`
             ${baseQuery}
-            AND CAST(R.TgInvoice AS DATE) = @today
+            AND CONVERT(date, R.TgInvoice) = @today
             GROUP BY RD.ItemDesc
             ORDER BY TotalQty DESC
         `);
 
         const monthResult = await request.query(`
             ${baseQuery}
-            AND CAST(R.TgInvoice AS DATE) BETWEEN @monthStart AND @monthEnd
+            AND CONVERT(date, R.TgInvoice) BETWEEN @monthStart AND @monthEnd
             GROUP BY RD.ItemDesc
             ORDER BY TotalQty DESC
         `);
 
         const yearResult = await request.query(`
             ${baseQuery}
-            AND CAST(R.TgInvoice AS DATE) BETWEEN @yearStart AND @yearEnd
+            AND CONVERT(date, R.TgInvoice) BETWEEN @yearStart AND @yearEnd
             GROUP BY RD.ItemDesc
             ORDER BY TotalQty DESC
         `);
