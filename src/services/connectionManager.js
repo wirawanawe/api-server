@@ -11,7 +11,20 @@ const getPool = (name, config) => {
             delete pools[name];
             return close(...args);
         };
-        pools[name] = pool.connect();
+
+        // Handle pool-level errors immediately
+        pool.on('error', err => {
+            console.error(`Connection Pool Error for ${name}:`, err);
+            // Remove from cache to force a new connection on next request
+            delete pools[name];
+        });
+
+        pools[name] = pool.connect().catch(err => {
+            // Log explicitly and delete the failed promise immediately so it's not cached forever
+            console.error(`Error establishing connection pool for ${name}:`, err);
+            delete pools[name];
+            throw err;
+        });
     }
     return pools[name];
 };

@@ -40,7 +40,12 @@ if (!server) {
     poolPromise = new sql.ConnectionPool(config)
         .connect()
         .then(pool => {
-            console.log('Connected to SQL Server');
+            console.log('Connected to SQL Server (Global Pool)');
+            // Add error handler for the global pool
+            pool.on('error', err => {
+                console.error('Global Database Pool Error:', err);
+                // Optionally handle global reconnect logic or let the app restart
+            });
             return pool;
         })
         .catch(err => {
