@@ -203,3 +203,81 @@ exports.getTopMedicines = async (req, res) => {
         res.status(500).json({ message: 'Server Error', error: err.message });
     }
 };
+
+exports.getTopMedicinesKunjungan = async (req, res) => {
+    try {
+        const pool = req.db;
+        if (!pool) {
+            return res.status(500).json({ message: 'Database connection failed' });
+        }
+
+        const now = new Date();
+        const reqYear = parseInt(req.query.year) || now.getFullYear();
+        const reqMonth = parseInt(req.query.month) || (now.getMonth() + 1);
+
+        const today = now.toISOString().slice(0, 10);
+        
+        const dayOfWeek = now.getDay(); 
+        const diffToMonday = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); 
+        const weekStartObj = new Date(now.setDate(diffToMonday));
+        const weekStart = weekStartObj.toISOString().slice(0, 10);
+        
+        const weekEndObj = new Date(weekStartObj);
+        weekEndObj.setDate(weekStartObj.getDate() + 6);
+        const weekEnd = weekEndObj.toISOString().slice(0, 10);
+
+        const monthStart = `${reqYear}-${String(reqMonth).padStart(2, '0')}-01`;
+        const lastDayOfMonth = new Date(reqYear, reqMonth, 0).getDate();
+        const monthEnd = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+        const baseQuery = `
+            SELECT TOP 10
+                RD.ItemDesc,
+                SUM(TRY_CAST(RD.Qty as float)) as TotalQty
+            FROM Resep R
+            JOIN Kunjungan K ON R.Kunjungan_ID = K.Kunjungan_ID
+            JOIN Resep_Detail RD ON R.NoInvoice = RD.NoInvoice
+            WHERE (R.GCRecord = 0 OR R.GCRecord = 'False' OR R.GCRecord IS NULL)
+              AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)
+              AND K.Tgl_Kunjungan >= @start AND K.Tgl_Kunjungan <= @end
+              AND RD.ItemDesc IS NOT NULL 
+              AND LTRIM(RTRIM(RD.ItemDesc)) != ''
+              AND (RD.GCRecord = 0 OR RD.GCRecord = 'False' OR RD.GCRecord IS NULL)
+            GROUP BY RD.ItemDesc
+            ORDER BY TotalQty DESC
+        `;
+
+        try {
+            const reqToday = pool.request()
+                .input('start', sql.VarChar, `${today} 00:00:00`)
+                .input('end', sql.VarChar, `${today} 23:59:59`);
+            var todayResult = await reqToday.query(baseQuery);
+        } catch(e) { console.warn("todayResult error", e.message); var todayResult = { recordset: [] }; }
+
+        try {
+            const reqWeek = pool.request()
+                .input('start', sql.VarChar, `${weekStart} 00:00:00`)
+                .input('end', sql.VarChar, `${weekEnd} 23:59:59`);
+            var weekResult = await reqWeek.query(baseQuery);
+        } catch(e) { console.warn("weekResult error", e.message); var weekResult = { recordset: [] }; }
+
+        try {
+            const reqMonth = pool.request()
+                .input('start', sql.VarChar, `${monthStart} 00:00:00`)
+                .input('end', sql.VarChar, `${monthEnd} 23:59:59`);
+            var monthResult = await reqMonth.query(baseQuery);
+        } catch(e) { console.warn("monthResult error", e.message); var monthResult = { recordset: [] }; }
+
+        res.json({
+            message: 'Top medicines fetched successfully',
+            data: {
+                hariIni: todayResult.recordset,
+                mingguIni: weekResult.recordset,
+                bulanIni: monthResult.recordset
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};
