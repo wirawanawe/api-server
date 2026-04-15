@@ -16,9 +16,13 @@ exports.getKunjungan = async (req, res) => {
         let filterClause = " WHERE 1=1 AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL)";
         const inputs = {};
 
-        if (startDate && endDate) {
-            filterClause += ` AND K.Tgl_Kunjungan BETWEEN @startDate AND @endDate`;
+        if (startDate) {
+            filterClause += ` AND CONVERT(date, K.Tgl_Kunjungan) >= @startDate`;
             inputs.startDate = { type: sql.Date, value: startDate };
+        }
+        
+        if (endDate) {
+            filterClause += ` AND CONVERT(date, K.Tgl_Kunjungan) <= @endDate`;
             inputs.endDate = { type: sql.Date, value: endDate };
         }
 

@@ -17,9 +17,13 @@ exports.getTransactions = async (req, res) => {
         let filterClause = " WHERE 1=1 AND (GCRecord = 0 OR GCRecord = 'False' OR GCRecord IS NULL)";
         const inputs = {};
 
-        if (startDate && endDate) {
-            filterClause += ` AND Tgl_Transaksi BETWEEN @startDate AND @endDate`;
+        if (startDate) {
+            filterClause += ` AND CONVERT(date, Tgl_Transaksi) >= @startDate`;
             inputs.startDate = { type: sql.Date, value: startDate };
+        }
+        
+        if (endDate) {
+            filterClause += ` AND CONVERT(date, Tgl_Transaksi) <= @endDate`;
             inputs.endDate = { type: sql.Date, value: endDate };
         }
 
