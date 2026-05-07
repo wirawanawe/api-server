@@ -625,45 +625,79 @@ exports.getLaporanTransaksiPerusahaan = async (req, res) => {
         reqPool.input('endDate', sql.VarChar, `${endDate} 23:59`);
 
         const result = await reqPool.query(`
-            SELECT t.Kunjungan_ID, k.Tgl_Kunjungan, t.No_MR, Ps.Nama_Pasien, '''' + Coalesce(K.No_KPK, '') As NoPeserta, Dr.Dokter_Name, 
-                dbo.DiagnosaPasien(K.Kunjungan_ID) As Diagnosa, Case When k.Unit_ID in (1,3) Then coalesce(dt.JmlDr,0) else 0 End As Umum, 
-                Case When k.Unit_ID=2 Then coalesce(dt.JmlDr,0) else 0 End As Gigi, 0 As [Bahan Obat], coalesce(dt.JmlDiag,0) As Test_Diagnosa, 
-                Rsp.NoInvoice, Rsp.ItemDesc, Rsp.Satuan, Rsp.Qty, Rsp.Harga, coalesce(Rsp.Jumlah,0) As Jml_Obat, 
-                coalesce(dt.Jumlah,0)+coalesce(RspT.Jumlah,0) As Total, Pj.[Description] As PenjaminName, Prs.Perusahaan_Name 
-            FROM TRANSAKSI t INNER JOIN Kunjungan k ON t.Kunjungan_ID=k.Kunjungan_ID INNER JOIN Dokter Dr ON k.Dokter_ID=dr.Dokter_ID 
-            INNER JOIN PASIEN Ps ON t.No_MR=Ps.No_MR INNER JOIN Far_Penjamin Pj ON k.PenjaminKey=Pj.PenjaminKey 
-            INNER JOIN PERUSAHAAN Prs ON k.Perusahaan_ID=Prs.Perusahaan_ID 
-            LEFT JOIN (SELECT No_Transaksi, Sum(Case When IP.Item_Type_ID=27 then Jumlah Else 0 End) As JmlDiag, 
-                Sum(Case When IP.Item_Type_ID Not in (3, 4, 27) AND Coalesce(IT.Item_Type_Parent,0) <> 4 then Jumlah Else 0 End) As JmlDr, 
-                Sum(Case When IP.Item_Type_ID Not in (3, 4) AND Coalesce(IT.Item_Type_Parent,0) <> 4 then Jumlah Else 0 End) As Jumlah 
-            FROM Transaksi_Detail TD INNER JOIN (ITEM_PRODUK IP INNER JOIN ITEM_TYPE IT ON IP.Item_Type_ID=IT.Item_Type_ID) ON TD.Item_Produk_ID=IP.Item_Produk_ID 
-            WHERE TD.gcrecord=0 GROUP BY No_Transaksi) dt ON t.No_Transaksi=dt.No_Transaksi 
-                LEFT JOIN (SELECT h.Kunjungan_ID, h.No_MR, h.noinvoice, d.ItemID, d.ItemDesc, d.Satuan, d.qty, d.harga, d.rpnetto As Jumlah 
-            FROM Far_Resep_Detail d INNER JOIN Far_Resep h ON d.noinvoice = h.noinvoice WHERE coalesce(d.GCRecord,0) = 0 
-                AND coalesce(h.GCRecord,0) = 0) Rsp ON k.Kunjungan_ID=Rsp.Kunjungan_ID 
-            LEFT JOIN (SELECT h.Kunjungan_ID, sum(d.rpnetto) As Jumlah FROM Far_Resep_Detail d INNER JOIN Far_Resep h ON d.noinvoice = h.noinvoice 
-            WHERE coalesce(d.GCRecord,0) = 0 AND coalesce(h.GCRecord,0) = 0 GROUP BY h.Kunjungan_ID) RspT ON k.Kunjungan_ID=RspT.Kunjungan_ID WHERE t.GcRecord = 0 
-            And k.GcRecord = 0 AND t.Tgl_Entry BETWEEN @startDate AND @endDate AND K.Branch_ID = '1' 
-            AND (coalesce(dt.Jumlah,0)+coalesce(RspT.Jumlah,0)) <> 0 ORDER BY t.Kunjungan_ID 
+            SELECT 
+                t.Kunjungan_ID, 
+                k.Tgl_Kunjungan, 
+                t.No_MR, 
+                Ps.Nama_Pasien, 
+                Coalesce(K.No_KPK, '') As NoPeserta, 
+                t.No_Transaksi,
+                Prs.Perusahaan_Name,
+                Rsp.ItemDesc, 
+                Rsp.Qty, 
+                Rsp.Harga, 
+                coalesce(Rsp.Jumlah,0) As Jml_Obat, 
+                coalesce(dt.Jumlah,0) As Biaya_Dokter,
+                coalesce(RspT.Jumlah,0) As Total_Obat,
+                (coalesce(dt.Jumlah,0) + coalesce(RspT.Jumlah,0)) As Total_Kunjungan
+            FROM TRANSAKSI t 
+            INNER JOIN Kunjungan k ON t.Kunjungan_ID = k.Kunjungan_ID 
+            INNER JOIN PASIEN Ps ON t.No_MR = Ps.No_MR 
+            INNER JOIN PERUSAHAAN Prs ON k.Perusahaan_ID = Prs.Perusahaan_ID 
+            LEFT JOIN (
+                SELECT 
+                    No_Transaksi, 
+                    Sum(Case When IP.Item_Type_ID Not in (3, 4) AND Coalesce(IT.Item_Type_Parent,0) <> 4 then Jumlah Else 0 End) As Jumlah 
+                FROM Transaksi_Detail TD 
+                INNER JOIN ITEM_PRODUK IP ON TD.Item_Produk_ID = IP.Item_Produk_ID
+                INNER JOIN ITEM_TYPE IT ON IP.Item_Type_ID = IT.Item_Type_ID
+                WHERE TD.gcrecord = 0 
+                GROUP BY No_Transaksi
+            ) dt ON t.No_Transaksi = dt.No_Transaksi 
+            LEFT JOIN (
+                SELECT 
+                    h.Kunjungan_ID, 
+                    d.ItemDesc, 
+                    d.qty, 
+                    d.harga, 
+                    d.rpnetto As Jumlah 
+                FROM Far_Resep_Detail d 
+                INNER JOIN Far_Resep h ON d.noinvoice = h.noinvoice 
+                WHERE coalesce(d.GCRecord,0) = 0 AND coalesce(h.GCRecord,0) = 0
+            ) Rsp ON k.Kunjungan_ID = Rsp.Kunjungan_ID 
+            LEFT JOIN (
+                SELECT 
+                    h.Kunjungan_ID, 
+                    sum(d.rpnetto) As Jumlah 
+                FROM Far_Resep_Detail d 
+                INNER JOIN Far_Resep h ON d.noinvoice = h.noinvoice 
+                WHERE coalesce(d.GCRecord,0) = 0 AND coalesce(h.GCRecord,0) = 0 
+                GROUP BY h.Kunjungan_ID
+            ) RspT ON k.Kunjungan_ID = RspT.Kunjungan_ID 
+            WHERE t.GcRecord = 0 
+            AND k.GcRecord = 0 
+            AND t.Tgl_Entry BETWEEN @startDate AND @endDate 
+            AND K.Branch_ID = '1' 
+            AND (coalesce(dt.Jumlah,0) + coalesce(RspT.Jumlah,0)) <> 0 
+            ORDER BY t.Kunjungan_ID, Rsp.ItemDesc
         `);
 
-        // Format to match the frontend columns expected
         const data = (result.recordset || []).map((r, i) => ({
             no: i + 1,
             noKunjungan: r.Kunjungan_ID ? String(r.Kunjungan_ID) : '',
+            tglKunjungan: r.Tgl_Kunjungan ? new Date(r.Tgl_Kunjungan).toISOString().slice(0, 10) : '',
             noMR: r.No_MR ?? '',
             namaPasien: r.Nama_Pasien ?? '',
-            namaDokter: r.Dokter_Name ?? '',
-            diagnosa: r.Diagnosa ?? '',
-            biayaDokterUmum: Number(r.Umum ?? 0),
-            noApotek: r.NoInvoice ?? '',
+            noPeserta: r.NoPeserta ?? '',
+            noTagihan: r.No_Transaksi ?? '',
+            perusahaan: r.Perusahaan_Name ?? '',
             namaObat: r.ItemDesc ?? '',
             qty: Number(r.Qty ?? 0),
             harga: Number(r.Harga ?? 0),
-            jumlah: Number(r.Jml_Obat ?? 0),
-            total: Number(r.Total ?? 0),
-            penjamin: r.PenjaminName ?? '',
-            perusahaan: r.Perusahaan_Name ?? '',
+            jumlahHargaObat: Number(r.Jml_Obat ?? 0),
+            biayaDokter: Number(r.Biaya_Dokter ?? 0),
+            biayaObatTotal: Number(r.Total_Obat ?? 0),
+            jumlahTotal: Number(r.Total_Kunjungan ?? 0),
         }));
 
         res.json({ message: 'Data fetched successfully', data, total: data.length });
