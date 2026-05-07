@@ -613,8 +613,8 @@ exports.getLaporanTransaksiPerusahaan = async (req, res) => {
         const pool = req.db;
         if (!pool) return res.status(500).json({ message: 'Database connection failed' });
 
-        const startDate = req.query.startDate;
-        const endDate = req.query.endDate;
+        const { startDate, endDate, pasien, perusahaan } = req.query;
+        console.log('LaporanTransaksiPerusahaan Query:', { startDate, endDate, pasien, perusahaan });
 
         if (!startDate || !endDate) {
             return res.status(400).json({ message: 'Start date and end date are required' });
@@ -623,6 +623,16 @@ exports.getLaporanTransaksiPerusahaan = async (req, res) => {
         const reqPool = pool.request();
         reqPool.input('startDate', sql.VarChar, `${startDate} 00:00`);
         reqPool.input('endDate', sql.VarChar, `${endDate} 23:59`);
+
+        let filterSql = '';
+        if (pasien) {
+            reqPool.input('pasien', sql.VarChar, `%${pasien}%`);
+            filterSql += ' AND Ps.Nama_Pasien LIKE @pasien';
+        }
+        if (perusahaan) {
+            reqPool.input('perusahaan', sql.VarChar, `%${perusahaan}%`);
+            filterSql += ' AND Prs.Perusahaan_Name LIKE @perusahaan';
+        }
 
         const result = await reqPool.query(`
             SELECT 
@@ -678,6 +688,7 @@ exports.getLaporanTransaksiPerusahaan = async (req, res) => {
             AND k.GcRecord = 0 
             AND t.Tgl_Entry BETWEEN @startDate AND @endDate 
             AND K.Branch_ID = '1' 
+            ${filterSql}
             AND (coalesce(dt.Jumlah,0) + coalesce(RspT.Jumlah,0)) <> 0 
             ORDER BY t.Kunjungan_ID, Rsp.ItemDesc
         `);
