@@ -119,7 +119,8 @@ exports.getObat = async (req, res) => {
             SELECT P.*,
                 PB.NMPAB AS Pabrik,
                 G.TYPE_OBAT_NAME AS Golongan,
-                S.stock AS Stok
+                S.stock AS Stok,
+                (SELECT TOP 1 RD.Harga FROM FAR_RESEP_DETAIL RD WHERE RD.ItemID = P.ElementDetailKey ORDER BY RD.NoInvoice DESC) AS HargaJual
             ${obatJoinClause}
             ${filterClause}
             ORDER BY ${finalOrder}
