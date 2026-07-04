@@ -990,3 +990,57 @@ exports.getGraphDataByStatusYear = async (req, res) => {
         res.status(500).json({ message: 'Server Error', error: err.message });
     }
 };
+
+exports.getLaporanResepObat = async (req, res) => {
+    try {
+        const pool = req.db;
+        if (!pool) return res.status(500).json({ message: 'Database connection failed' });
+
+        const { startDate, endDate, search } = req.query;
+
+        const reqPool = pool.request();
+        let filterClause = "WHERE (R.GCRecord = 0 OR R.GCRecord = 'False' OR R.GCRecord IS NULL) AND (RD.GCRecord = 0 OR RD.GCRecord = 'False' OR RD.GCRecord IS NULL) AND (K.GCRecord = 0 OR K.GCRecord = 'False' OR K.GCRecord IS NULL) AND RD.ItemDesc IS NOT NULL AND RD.ItemDesc != ''";
+
+        if (startDate) {
+            reqPool.input('startDate', sql.Date, startDate);
+            filterClause += ' AND CAST(R.TgInvoice AS DATE) >= @startDate';
+        }
+        if (endDate) {
+            reqPool.input('endDate', sql.Date, endDate);
+            filterClause += ' AND CAST(R.TgInvoice AS DATE) <= @endDate';
+        }
+        if (search) {
+            reqPool.input('search', sql.VarChar, `%${search}%`);
+            filterClause += ' AND (D.Dokter_Name LIKE @search OR RD.ItemDesc LIKE @search)';
+        }
+
+        const result = await reqPool.query(`
+            SELECT 
+                R.TgInvoice AS tanggal,
+                D.Dokter_Name AS namaDokter,
+                R.NoInvoice AS noResep,
+                RD.ItemDesc AS namaObat,
+                RD.Qty AS qty
+            FROM Resep R
+            JOIN Resep_Detail RD ON R.NoInvoice = RD.NoInvoice
+            JOIN Kunjungan K ON R.Kunjungan_ID = K.Kunjungan_ID
+            LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
+            ${filterClause}
+            ORDER BY R.TgInvoice DESC, R.NoInvoice DESC, RD.ItemDesc ASC
+        `);
+
+        const data = (result.recordset || []).map((r, index) => ({
+            no: index + 1,
+            tanggal: r.tanggal ? new Date(r.tanggal).toISOString().slice(0, 10) : null,
+            namaDokter: r.namaDokter ?? '-',
+            noResep: r.noResep ?? '-',
+            namaObat: r.namaObat ?? '-',
+            qty: r.qty ?? 0,
+        }));
+
+        res.json({ message: 'Success', data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server Error', error: err.message });
+    }
+};

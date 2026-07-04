@@ -153,7 +153,7 @@ exports.getTopMedicines = async (req, res) => {
         const monthEnd = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
 
         const baseQuery = `
-            SELECT TOP 10
+            SELECT
                 RD.ItemDesc,
                 SUM(RD.Qty) as TotalQty,
                 SUM(RD.RpNetto) as TotalNominal

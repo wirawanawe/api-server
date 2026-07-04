@@ -27,6 +27,10 @@ router.get('/pembelian-obat/schema', dashboardController.getPembelianObatSchema)
 // GET /api/dashboard/laporan/pembelian-obat?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 router.get('/laporan/pembelian-obat', dashboardController.getLaporanPembelianObat);
 
+// Laporan Resep Obat (JOIN Resep + Kunjungan + Dokter)
+// GET /api/dashboard/laporan/resep-obat?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+router.get('/laporan/resep-obat', dashboardController.getLaporanResepObat);
+
 // Laporan Transaksi Perusahaan
 // GET /api/dashboard/laporan/transaksi-perusahaan?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 router.get('/laporan/transaksi-perusahaan', dashboardController.getLaporanTransaksiPerusahaan);
