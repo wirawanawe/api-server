@@ -1020,11 +1020,14 @@ exports.getLaporanResepObat = async (req, res) => {
                 D.Dokter_Name AS namaDokter,
                 R.NoInvoice AS noResep,
                 RD.ItemDesc AS namaObat,
-                RD.Qty AS qty
+                RD.Qty AS qty,
+                FP.NMPAB AS namaPabrik
             FROM Resep R
             JOIN Resep_Detail RD ON R.NoInvoice = RD.NoInvoice
             JOIN Kunjungan K ON R.Kunjungan_ID = K.Kunjungan_ID
             LEFT JOIN Dokter D ON K.Dokter_ID = D.Dokter_ID
+            LEFT JOIN FAR_OBAT FO ON RD.ItemID = FO.ELEMENTDETAILKEY
+            LEFT JOIN FAR_PABRIK FP ON FO.KDPAB = FP.KDPAB
             ${filterClause}
             ORDER BY R.TgInvoice DESC, R.NoInvoice DESC, RD.ItemDesc ASC
         `);
@@ -1035,6 +1038,7 @@ exports.getLaporanResepObat = async (req, res) => {
             namaDokter: r.namaDokter ?? '-',
             noResep: r.noResep ?? '-',
             namaObat: r.namaObat ?? '-',
+            namaPabrik: r.namaPabrik ?? '-',
             qty: r.qty ?? 0,
         }));
 
